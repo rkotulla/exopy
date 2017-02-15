@@ -36,7 +36,9 @@ def rotate_me(output_coords,
 def extract_psf(fn, ra, dec,
                 cutout_size=700,
                 superscale=2.,
-                normalize_zp=30.):
+                normalize_zp=30.,
+                magnitude=0.,
+                rotate=True):
 
     hdu = pyfits.open(fn)
     hdu.writeto("dump2.fits", clobber=True)
@@ -156,7 +158,7 @@ def extract_psf(fn, ra, dec,
     # Figure out an appropriate scaling factor to normalize PSF extractions
     #
     magzero = hdu[0].header['PHOTZP_X']
-    scale = numpy.power(10., -0.4*(magzero - normalize_zp))
+    scale = numpy.power(10., -0.4*(magzero - normalize_zp - magnitude))
     out *= scale
 
     print "#####", fn, magzero, normalize_zp, scale
@@ -166,16 +168,18 @@ if __name__ == "__main__":
     
     ra = float(sys.argv[1])
     dec = float(sys.argv[2])
+
+    magnitude = float(sys.argv[3])
+
+    fn = sys.argv[4]
     
-    fn = sys.argv[3]
-    
-    try:
-        out_fn = sys.argv[4]
-    except:
-        out_fn = fn[:-5]+".psf.fits"
+    # try:
+    #     out_fn = sys.argv[4]
+    # except:
+    out_fn = fn[:-5]+".psf.fits"
 
     superscale = 1.0
-    psf = extract_psf(fn, ra, dec, superscale=1.)
+    psf = extract_psf(fn, ra, dec, superscale=1., magnitude=magnitude)
 
     phdu = pyfits.PrimaryHDU(data=psf)
     phdu.header['SPRSCALE'] = superscale
