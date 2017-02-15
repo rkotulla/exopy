@@ -74,7 +74,7 @@ def subtract_psf(psf, fn, hdu, ra, dec, superscale=1., normalize_zp=30.):
         )
     print "done!"
 
-    pyfits.PrimaryHDU(data=out).writeto(fn[:-5]+".psf2sub.fits", clobber=True)
+    # pyfits.PrimaryHDU(data=out).writeto(fn[:-5]+".psf2sub.fits", clobber=True)
     # out_bpm = scipy.ndimage.interpolation.geometric_transform(
     #     input=bpm,
     #     mapping=rotate_me,
