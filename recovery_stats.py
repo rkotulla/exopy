@@ -8,10 +8,9 @@ import math
 import subprocess
 import scipy.spatial
 
-if __name__ == "__main__":
 
-    out_dir = sys.argv[1]
-    mag = float(sys.argv[2])
+
+def recovery_stats(out_dir, mag):
 
     inserted_all = None
     recovered_all = None
@@ -39,7 +38,7 @@ if __name__ == "__main__":
     numpy.savetxt("inserted.all", inserted_all)
     numpy.savetxt("recovered.all", recovered_all)
 
-    bins = numpy.linspace(0, 400, 1)
+    bins = numpy.linspace(0, 400, 21)
     print bins
 
     count_inserted,_ = numpy.histogram(
@@ -51,6 +50,17 @@ if __name__ == "__main__":
     bin_center = 0.5*(bins[0:-1] + bins[1:])
     bin_width = numpy.diff(bins)
 
-    numpy.savetxt("analysis_mag%.1f" % (mag),
-        numpy.array([bin_center, bin_width, count_inserted,
-                     count_recovered]).T)
+    results = numpy.array([bin_center, bin_width, count_inserted,
+                     count_recovered]).T
+
+    return results
+
+
+if __name__ == "__main__":
+
+    out_dir = sys.argv[1]
+    mag = float(sys.argv[2])
+
+    results = recovery_stats(out_dir, mag)
+
+    numpy.savetxt("analysis_mag%.1f" % (mag), results)
