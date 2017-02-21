@@ -38,13 +38,22 @@ if __name__ == "__main__":
     seeing_sigma_pixels = seeing_fwhm / pixelscale / 2.355
     print "sigma in pixels", seeing_sigma_pixels
 
-    star_box_size = 2*n_sigma*seeing_fwhm/pixelscale
+    star_box_size = int(2*n_sigma*seeing_fwhm/pixelscale)
     starmodel = numpy.zeros((star_box_size, star_box_size))
 
     sy, sx = numpy.indices(starmodel.shape, dtype=numpy.float)
     sy -= star_box_size/2.
     sx -= star_box_size/2.
     sr = numpy.hypot(sx,sy)
+
+    mask = True
+    if (mask):
+        _y,_x = numpy.indices(data.shape, dtype=numpy.float)
+        _x -= cx
+        _y -= cy
+        outside_range = (numpy.fabs(_x) > max_position_offset) | \
+                        (numpy.fabs(_y) > max_position_offset)
+        data[outside_range] = numpy.NaN
 
     starmodel = numpy.exp( -sr**2 / (2*seeing_sigma_pixels**2))
     total_flux = numpy.sum(starmodel)
@@ -75,7 +84,7 @@ if __name__ == "__main__":
         _outimg = data.copy()
 
         center_pos = numpy.round(
-            (numpy.random.random((n_per_image, 2)) - 0.5) * 2 * \
+            (numpy.random.random((int(n_per_image), 2)) - 0.5) * 2 * \
                      max_position_offset + [cx,cy], 0).astype(numpy.int)
         r = numpy.hypot(center_pos[:,0]+1.-cx, center_pos[:,1]+1.-cy)
 
@@ -119,6 +128,9 @@ if __name__ == "__main__":
         hdulist[0].header['_STARMAG'] = mag
         hdulist[0].header['_CENTERX'] = cx
         hdulist[0].header['_CENTERY'] = cy
+        if (os.path.isfile(out_fn)):
+            os.remove(out_fn)
+        print("writing %s" % (out_fn))
         hdulist.writeto(out_fn, clobber=True)
 
 
