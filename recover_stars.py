@@ -14,6 +14,7 @@ if __name__ == "__main__":
     mag = float(sys.argv[2])
 
     sextractor_conf = sys.argv[3]
+    sextractor_params = sys.argv[4]
 
     matching_radius_arcsec = 1.
     for frame_number in range(1000):
@@ -31,8 +32,8 @@ if __name__ == "__main__":
         # Now run source extractor
         #
         sex_cat_fn = filebase+".sexsrc"
-        sex_cmd = "sex -c %s -CATALOG_NAME %s %s" % (
-            sextractor_conf, sex_cat_fn, fits_fn
+        sex_cmd = "sex -c %s -CATALOG_NAME %s -PARAMETERS_NAME %s %s" % (
+            sextractor_conf, sex_cat_fn, sextractor_params, fits_fn
         )
         print sex_cmd
 
