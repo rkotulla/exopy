@@ -13,13 +13,15 @@ from optparse import OptionParser
 
 def parallel_worker(jobqueue,
                     data, r, phi,
-                    dr, dphi, dpix,
+                    dr, dphi, dpix, dmask,
                     xy_list,
                     return_queue,
                     chunksize=1000,):
 
     pixelnumber = 0
     max_box_size = int(math.ceil(numpy.hypot(dr, dpix)))
+
+    _iy, _ix = numpy.indices(data.shape, dtype=numpy.float)
 
     while (True):
 
@@ -55,8 +57,8 @@ def parallel_worker(jobqueue,
             # Work out the maximum dimension of a box around the current position
             # that contains all pixels we need to work on
             #
-            box_size_y = int(math.ceil(max_box_size * numpy.fabs(numpy.cos(numpy.radians(_phi))))) + dpix
-            box_size_x = int(math.ceil(max_box_size * numpy.fabs(numpy.sin(numpy.radians(_phi))))) + dpix
+            box_size_y = int(math.ceil(max_box_size * numpy.fabs(numpy.cos(numpy.radians(_phi)))) + dpix)
+            box_size_x = int(math.ceil(max_box_size * numpy.fabs(numpy.sin(numpy.radians(_phi)))) + dpix)
 
             #median[i_pixel] = box_size_y #numpy.nanmedian(this_data[final_select])
             #count[i_pixel] = box_size_x #numpy.sum(final_select)
@@ -70,6 +72,9 @@ def parallel_worker(jobqueue,
             block_data = data[y1:y2, x1:x2]
             block_phi = phi[y1:y2, x1:x2]
             block_r = r[y1:y2, x1:x2]
+            if (dmask is not None):
+                block_ix = _ix[y1:y2, x1:x2]
+                block_iy = _iy[y1:y2, x1:x2]
 
 
             pixelnumber += 1
@@ -109,10 +114,18 @@ def parallel_worker(jobqueue,
                 delta_phi = this_phi - _phi
                 pixel_offset = numpy.abs(numpy.sin(numpy.radians(delta_phi))*this_r)
                 final_select = (pixel_offset < dpix)
+                final_data = this_data[final_select]
+
+                if (dmask is not None):
+                    __ix = block_ix[right_angle][final_select]
+                    __iy = block_iy[right_angle][final_select]
+                    __r = numpy.hypot(__ix-x, __iy-y)
+                    final_data = final_data[__r>dmask]
+
 
                 # polar_median[pixel] = numpy.nanmedian(this_data[final_select])
                 # polar_count[pixel] = numpy.sum(final_select)
-                median[i_pixel] = numpy.nanmedian(this_data[final_select])
+                median[i_pixel] = numpy.nanmedian(final_data) #this_data[final_select])
                 count[i_pixel] = numpy.sum(final_select)
             # except:
             #     pass
@@ -147,6 +160,8 @@ if __name__ == "__main__":
                       default=15, type=float)
     parser.add_option("", "--dpix", dest="dpix",
                        default=4., type=float)
+    parser.add_option("", "--dmask", dest="dmask",
+                       default=None, type=float)
     (options, cmdline_args) = parser.parse_args()
 
     fn = cmdline_args[0]
@@ -177,8 +192,8 @@ if __name__ == "__main__":
     phi = numpy.degrees(numpy.arctan2(rel_x, rel_y))
 
     # Now just for practice, extract a radial ring
-    max_r = 1000
-    min_r = 50
+    max_r = options.maxr
+    min_r = 0
     in_ring = (r > min_r) & (r < max_r)
     # data[~in_ring] = numpy.NaN #numpy.degrees(phi)[~in_ring]
     #pyfits.PrimaryHDU(data=data).writeto("ring.fits", clobber=True)
@@ -209,9 +224,9 @@ if __name__ == "__main__":
     polar_median = numpy.zeros((xy_work.shape[0]))
     polar_count = numpy.zeros((xy_work.shape[0]))
 
-    dr = 15
+    dr = options.dr
     dphi = 1
-    dpix = 4
+    dpix = options.dpix
 
     jobqueue = multiprocessing.JoinableQueue()
     resultqueue = multiprocessing.Queue()
@@ -247,6 +262,7 @@ if __name__ == "__main__":
                 data=data, r=r, phi=phi,
                 dr=dr, dphi=dphi, dpix=dpix,
                 xy_list=xy_work, chunksize=chunksize,
+                dmask=options.dmask,
                 return_queue=resultqueue,
             )
         )
@@ -359,5 +375,9 @@ if __name__ == "__main__":
     data[use_data] -= polar_median
     out_fn = fn[:-5]+".radialbgsub.fits"
     hdulist[extname].data = data
+    hdulist[0].header['__MAXR'] = max_r
+    hdulist[0].header['__DR'] = dr
+    hdulist[0].header['__DPIX'] = dpix
+
     # pyfits.PrimaryHDU(data=data).writeto(out_fn, clobber=True)
     hdulist.writeto(out_fn, clobber=True)
