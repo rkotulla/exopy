@@ -7,23 +7,15 @@ import numpy
 import math
 
 
-if __name__ == "__main__":
 
-    fn = sys.argv[1]
-
-    cx = float(sys.argv[2])
-    cy = float(sys.argv[3])
-
-    seeing_fwhm = float(sys.argv[4])
-    mag = float(sys.argv[5])
-    out_dir = sys.argv[6]
+def insert_artificial_sources(
+        fn, cx, cy, seeing_fwhm, mag, out_dir,
+        n_total=1000, n_per_image=100,
+        max_position_offset=300,
+    ):
 
     if (not os.path.isdir(out_dir)):
         os.makedirs(out_dir)
-
-    n_total = 1000.
-    n_per_image = 100.
-    max_position_offset = 300
 
     print fn, cx, cy
     print "seeing in arcsec", seeing_fwhm
@@ -135,3 +127,31 @@ if __name__ == "__main__":
 
 
     pyfits.HDUList(stars).writeto("stars.fits", clobber=True)
+
+
+
+if __name__ == "__main__":
+
+    fn = sys.argv[1]
+
+    cx = float(sys.argv[2])
+    cy = float(sys.argv[3])
+
+    seeing_fwhm = float(sys.argv[4])
+    mag = float(sys.argv[5])
+    out_dir = sys.argv[6]
+
+    n_total = 1000.
+    n_per_image = 100.
+    max_position_offset = 300
+
+    insert_artificial_sources(
+        fn=fn,
+        cx=cx, cy=cy,
+        seeing_fwhm=seeing_fwhm,
+        mag=mag,
+        out_dir=out_dir,
+        n_total=n_total,
+        n_per_image=n_per_image,
+        max_position_offset=max_position_offset,
+    )

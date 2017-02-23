@@ -8,15 +8,14 @@ import math
 import subprocess
 import scipy.spatial
 
-if __name__ == "__main__":
 
-    out_dir = sys.argv[1]
-    mag = float(sys.argv[2])
 
-    sextractor_conf = sys.argv[3]
-    sextractor_params = sys.argv[4]
 
-    matching_radius_arcsec = 1.
+
+def recover_stars(out_dir, mag, sextractor_conf, sextractor_params,
+                  matching_radius_arcsec=1):
+
+
     for frame_number in range(1000):
         filebase = "%s/mag%.1f__chunk%02d" % (
             out_dir, mag, frame_number+1
@@ -119,3 +118,24 @@ if __name__ == "__main__":
         #              2*matched_combined[:,5]
         # valid_matched = matched_combined[true_match]
         # print valid_matched.shape
+
+
+
+if __name__ == "__main__":
+
+    out_dir = sys.argv[1]
+    mag = float(sys.argv[2])
+
+    sextractor_conf = sys.argv[3]
+    sextractor_params = sys.argv[4]
+
+    matching_radius_arcsec = 1.
+
+    recover_stars(
+        out_dir=out_dir,
+        mag=mag,
+        sextractor_conf=sextractor_conf,
+        sextractor_params=sextractor_params,
+        matching_radius_arcsec=matching_radius_arcsec,
+    )
+
