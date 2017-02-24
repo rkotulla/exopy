@@ -9,6 +9,8 @@ import time
 import math
 from optparse import OptionParser
 
+from astLib import astWCS
+import ephem
 
 
 def parallel_worker(jobqueue,
@@ -162,14 +164,12 @@ if __name__ == "__main__":
                        default=4., type=float)
     parser.add_option("", "--dmask", dest="dmask",
                        default=None, type=float)
+    parser.add_option("", "--pixel", dest="pixelcoords",
+                      action="store_true", default=False)
+
     (options, cmdline_args) = parser.parse_args()
 
     fn = cmdline_args[0]
-    cx = float(cmdline_args[1])
-    cy = float(cmdline_args[2])
-
-    print fn, cx, cy
-
     hdulist = pyfits.open(fn)
     # check what extension to use
     try:
@@ -177,6 +177,30 @@ if __name__ == "__main__":
     except:
         extname = "PRIMARY"
     data = hdulist[extname].data
+
+
+    if (options.pixelcoords):
+        cx = float(cmdline_args[1]) - 1.
+        cy = float(cmdline_args[2]) - 1.
+        # subtract one to convert FITS 1-indexed to internal array coords
+    else:
+        ra = cmdline_args[1]
+        dec = cmdline_args[2]
+        try:
+            ra_deg = float(ra)
+            dec_deg = float(dec)
+        except:
+            obj = ephem.Equatorial(ra, dec)
+            ra_deg = numpy.degrees(obj.ra)
+            dec_deg = numpy.degrees(obj.dec)
+        wcs = astWCS.WCS(hdulist[extname].header, mode='pyfits')
+        xy = wcs.wcs2pix(ra_deg, dec_deg)
+        cx = xy[0]
+        cy = xy[1]
+        print "RA/DEC to x/y", ra, dec, cx, cy
+
+    print fn, cx, cy
+
 
     iy,ix = numpy.indices(data.shape)
     #print iy[:5,:5]
@@ -361,12 +385,14 @@ if __name__ == "__main__":
     print "writing smoothring"
     _data = data.copy()
     _data[use_data] = polar_median
-    pyfits.PrimaryHDU(data=_data).writeto("smoothring.fits", clobber=True)
+    out_fn = fn[:-5]+".radialmedian.fits"
+    pyfits.PrimaryHDU(data=_data).writeto(out_fn, clobber=True)
 
     print "writing smoothring_count"
     _data = data.copy()
     _data[use_data] = polar_count
-    pyfits.PrimaryHDU(data=_data).writeto("smoothring_count.fits", clobber=True)
+    out_fn = fn[:-5]+".radialcount.fits"
+    pyfits.PrimaryHDU(data=_data).writeto(out_fn, clobber=True)
 
     #
     # Finally, subtract the smoothed model from the input data
