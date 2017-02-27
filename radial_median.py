@@ -9,9 +9,12 @@ import time
 import math
 from optparse import OptionParser
 
+import mask_diffraction_spikes
+
 from astLib import astWCS
 import ephem
 
+numpy.seterr(all='ignore')
 
 def parallel_worker(jobqueue,
                     data, r, phi,
@@ -43,7 +46,7 @@ def parallel_worker(jobqueue,
 
         count = numpy.zeros((c2-c1))
 
-        print chunk, median.shape, count.shape,
+        #print chunk, median.shape, count.shape,
 
         for i_pixel, pixel in enumerate(pixel_list):
 
@@ -80,10 +83,10 @@ def parallel_worker(jobqueue,
 
 
             pixelnumber += 1
-            if ((pixelnumber % 100) == 0):
-                sys.stdout.write(".")
-                # sys.stdout.write("\r%6d %4d %4d" % (pixelnumber, x,y))
-                sys.stdout.flush()
+            # if ((pixelnumber % 100) == 0):
+            #     sys.stdout.write(".")
+            #     # sys.stdout.write("\r%6d %4d %4d" % (pixelnumber, x,y))
+            #     sys.stdout.flush()
 
             #_r = r[pixel]
             #_phi = phi[pixel]
@@ -134,7 +137,7 @@ def parallel_worker(jobqueue,
 
         return_queue.put((chunk, c1, c2, median, count))
         jobqueue.task_done()
-        print
+        #print
             #break
 
 
@@ -152,40 +155,21 @@ def parallel_worker(jobqueue,
     print "terminating worker"
 
 
-if __name__ == "__main__":
 
 
-    parser = OptionParser()
-    parser.add_option("", "--maxr", dest="maxr",
-                      default="700", type=int)
-    parser.add_option("", "--dr", dest="dr",
-                      default=15, type=float)
-    parser.add_option("", "--dpix", dest="dpix",
-                       default=4., type=float)
-    parser.add_option("", "--dmask", dest="dmask",
-                       default=None, type=float)
-    parser.add_option("", "--pixel", dest="pixelcoords",
-                      action="store_true", default=False)
+def compute_radial_median(fn, extname, x_ra, y_dec, options):
 
-    (options, cmdline_args) = parser.parse_args()
-
-    fn = cmdline_args[0]
     hdulist = pyfits.open(fn)
-    # check what extension to use
-    try:
-        extname = sys.argv[4]
-    except:
-        extname = "PRIMARY"
     data = hdulist[extname].data
 
 
     if (options.pixelcoords):
-        cx = float(cmdline_args[1]) - 1.
-        cy = float(cmdline_args[2]) - 1.
+        cx = float(x_ra) - 1.  #cmdline_args[1]) - 1.
+        cy = float(y_dec) - 1. #cmdline_args[2]) - 1.
         # subtract one to convert FITS 1-indexed to internal array coords
     else:
-        ra = cmdline_args[1]
-        dec = cmdline_args[2]
+        ra = x_ra # cmdline_args[1]
+        dec = y_dec #cmdline_args[2]
         try:
             ra_deg = float(ra)
             dec_deg = float(dec)
@@ -215,10 +199,27 @@ if __name__ == "__main__":
     r = numpy.hypot(rel_x, rel_y)
     phi = numpy.degrees(numpy.arctan2(rel_x, rel_y))
 
+
+    #
+    # If requested, mask out diffraction spikes. Do this now, as then the
+    # affected pixels are excluded from radial median calculation, slightly
+    # speeding things up
+    #
+    if (options.maskspikes):
+        spike_mask = mask_diffraction_spikes.mask_diffraction_spikes(
+            data=data,
+            hdr=hdulist[0].header,
+            x=cx, y=cy,
+            length=options.spike_length,
+            width=options.spike_width,
+        )
+        data[spike_mask] = numpy.NaN
+
+
     # Now just for practice, extract a radial ring
     max_r = options.maxr
     min_r = 0
-    in_ring = (r > min_r) & (r < max_r)
+    in_ring = (r > min_r) & (r < max_r) & (numpy.isfinite(data))
     # data[~in_ring] = numpy.NaN #numpy.degrees(phi)[~in_ring]
     #pyfits.PrimaryHDU(data=data).writeto("ring.fits", clobber=True)
 
@@ -269,8 +270,8 @@ if __name__ == "__main__":
         #         chunk_end = xy_work.shape[0]
         #     jobqueue.put(xy_work[chunk_start:chunk_end, :])
         #     chunk_start = chunk_end
-        sys.stdout.write(".")
-        sys.stdout.flush()
+        # sys.stdout.write(".")
+        # sys.stdout.flush()
 
     print "starting worker"
     n_workers = multiprocessing.cpu_count()
@@ -321,8 +322,9 @@ if __name__ == "__main__":
 
     for i in range(n_chunks):
 
-        print "reading results"
+        #print "reading results"
         (chunk, c1, c2, median, count) = resultqueue.get()
+        sys.stdout.write("\rdone with chunk %5d of %5d" % (i+1, n_chunks))
         #print "Received chunk %d" % (chunk), median.shape, count.shape
 
         polar_median[c1:c2] = median[:]
@@ -378,6 +380,7 @@ if __name__ == "__main__":
         # #                            this_data[final_select]]).T)
         # # if (pixel > 25):
         # #     break
+    print "\nAll done!"
 
     print use_data.shape
     print (data[use_data]).shape, polar_median.shape
@@ -407,3 +410,45 @@ if __name__ == "__main__":
 
     # pyfits.PrimaryHDU(data=data).writeto(out_fn, clobber=True)
     hdulist.writeto(out_fn, clobber=True)
+
+
+if __name__ == "__main__":
+
+
+    parser = OptionParser()
+    parser.add_option("", "--maxr", dest="maxr",
+                      default="700", type=int)
+    parser.add_option("", "--dr", dest="dr",
+                      default=15, type=float)
+    parser.add_option("", "--dpix", dest="dpix",
+                       default=4., type=float)
+    parser.add_option("", "--dmask", dest="dmask",
+                       default=None, type=float)
+    parser.add_option("", "--pixel", dest="pixelcoords",
+                      action="store_true", default=False)
+    parser.add_option("", "--extname", dest="extname",
+                      default='PRIMARY', type=str)
+    parser.add_option("", "--spikes", dest="maskspikes",
+                      action="store_true", default=False)
+    parser.add_option("", "--spikelength", dest="spike_length",
+                      default=750, type=int)
+    parser.add_option("", "--spikewidth", dest="spike_width",
+                      default=10, type=int)
+
+    (options, cmdline_args) = parser.parse_args()
+
+
+    x_ra = cmdline_args[0]
+    y_dec = cmdline_args[1]
+
+    print options.extname
+
+    for fn in cmdline_args[2:]:
+        print "\n\nWorking on %s\n\n" % (fn)
+        compute_radial_median(
+            fn=fn,
+            extname=options.extname,
+            x_ra=x_ra, #cmdline_args[1],
+            y_dec=y_dec, #cmdline_args[2],
+            options=options,
+        )
