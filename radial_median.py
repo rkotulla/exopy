@@ -160,11 +160,13 @@ def parallel_worker(jobqueue,
 
 
 
-def compute_radial_median(fn, extname, x_ra, y_dec, options):
+def compute_radial_median(fn, extname, x_ra, y_dec, options, input_hdu=None):
 
-    hdulist = pyfits.open(fn)
+    if (input_hdu is None):
+        hdulist = pyfits.open(fn)
+    else:
+        hdulist = input_hdu
     data = hdulist[extname].data
-
 
     if (options.pixelcoords):
         cx = float(x_ra) - 1.  #cmdline_args[1]) - 1.
@@ -188,6 +190,10 @@ def compute_radial_median(fn, extname, x_ra, y_dec, options):
 
     print fn, cx, cy
 
+    if (cx < 0 or cx > data.shape[1] or
+        cy < 0 or cy > data.shape[0]):
+        # This chip does not contain the coordinates we need
+        return None
 
     iy,ix = numpy.indices(data.shape)
     #print iy[:5,:5]
@@ -544,10 +550,57 @@ if __name__ == "__main__":
 
     for fn in cmdline_args[2:]:
         print "\n\nWorking on %s\n\n" % (fn)
+
+        hdulist = pyfits.open(fn)
+        print options.extname
+
+        #
+        # Delete all extensions except the primary, science
+        #
+        use_extension = options.extname
+        selected_hdu = [hdulist[0]]
+        if (options.extname == 'PRIMARY'):
+            pass
+        elif (options.extname == "auto"): # and not options.pixelcoords):
+            #
+            # select the right OTA based on which OTA contains the selected
+            #  coordinates
+            #
+            print "XXXXXXXXX"
+            obj = ephem.Equatorial(x_ra, y_dec)
+            ra_deg = numpy.degrees(obj.ra)
+            dec_deg = numpy.degrees(obj.dec)
+            for ext in hdulist:
+                try:
+                    wcs = astWCS.WCS(ext.header, mode='pyfits')
+                    xy = wcs.wcs2pix(ra_deg, dec_deg)
+                    #print xy
+                    [x,y] = xy
+                    #print xy
+                    if (x > 0 and x < ext.header['NAXIS1'] and
+                        y > 0 and y < ext.header['NAXIS2']):
+                        # we found the right extension
+                        use_extension = ext.name
+                        selected_hdu.append(ext)
+                        print "Found source in extension %s" % (ext.name)
+                        break
+                except:
+                    pass
+        else:
+            try:
+                selected_hdu.append(hdulist[options.extname])
+            except KeyError:
+                print("unable to find extension %s" % (options.extname))
+                pass
+        selected_hdu = pyfits.HDUList(selected_hdu)
+
+        selected_hdu.info()
+
         compute_radial_median(
             fn=fn,
-            extname=options.extname,
+            extname=use_extension,
             x_ra=x_ra, #cmdline_args[1],
             y_dec=y_dec, #cmdline_args[2],
             options=options,
+            input_hdu=selected_hdu,
         )
