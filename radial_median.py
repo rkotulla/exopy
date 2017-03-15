@@ -8,8 +8,11 @@ import multiprocessing
 import time
 import math
 from optparse import OptionParser
+import scipy.interpolate
+
 
 import mask_diffraction_spikes
+import makeprofile
 
 from astLib import astWCS
 import ephem
@@ -225,10 +228,84 @@ def compute_radial_median(fn, extname, x_ra, y_dec, options):
 
     x_work = ix[in_ring]
     y_work = iy[in_ring]
+    r_work = r[in_ring]
+    data_work = data[in_ring]
 
     print x_work.shape, y_work.shape
     xy_work = numpy.array([x_work, y_work]).T
     print xy_work.shape
+
+
+    if (options.presub):
+        #
+        # Take out the overall radian brightness profile
+        #
+        print "computing radial brightness profile"
+        # profile, smooth2d = makeprofile.compute_profile(
+        #     data=data,
+        #     fn="delme.fits")
+
+        #
+        # compute median in radial bins
+        #
+        if (max_r <= 50):
+            binedges = list(numpy.arange(0, max_r, 2))
+        elif (max_r > 50 and max_r <= 250):
+            binedges = list(numpy.arange(0,50,2)) + \
+                list(numpy.arange(50,max_r,4))
+        else: #if (max_r > 250):
+            binedges = list(numpy.arange(0,50,2)) + \
+                list(numpy.arange(50,250,4)) + \
+                list(numpy.arange(250, max_r, 8))
+        binedges += list([max_r])
+        binedges = numpy.array(binedges)
+
+        #max_width = max_r #data.shape[1]/3
+        n_bins = 100
+        # bin_width = max_r / n_bins
+
+        n_bins = binedges.shape[0]-1
+        #profile_median = numpy.zeros((n_bins,4))
+        #profile_median[:,:] = numpy.NaN
+        profile_median = []
+        for ibin in range(n_bins):
+            _min_r = binedges[ibin] # ibin*bin_width
+            _max_r = binedges[ibin+1] #min_r + bin_width
+
+            in_this_bin = (r_work > _min_r) & (r_work <= _max_r)
+            if (numpy.sum(in_this_bin) <= 0):
+                continue
+
+            median = numpy.median(data_work[in_this_bin])
+            profile_median.append([math.sqrt(0.5*(_max_r**2+_min_r**2)), median, _min_r, _max_r])
+
+        profile_median = numpy.array(profile_median)
+        numpy.savetxt(sys.stdout, profile_median)
+        numpy.savetxt("star.prof", profile_median)
+        numpy.savetxt("dummy.profile2", profile_median)
+        good_profile = profile_median[numpy.isfinite(profile_median[:,0])]
+
+        #
+        # Now compute an interpolation function
+        #
+        interpol = scipy.interpolate.interp1d(
+            good_profile[:,0],
+            good_profile[:,1],
+            bounds_error=False)
+
+        scale_2d = interpol(r_work)
+
+        modelsub = data.copy()
+        modelsub[in_ring] -= scale_2d
+
+        if (options.write_starmodel):
+            model = data.copy()
+            model[in_ring] = scale_2d
+            pyfits.PrimaryHDU(data=model).writeto(fn[:-5]+".starmodel.fits", clobber=True)
+
+    else:
+        modelsub = data.copy()
+        scale_2d = numpy.zeros(data_work.shape)
 
 
     #
@@ -284,7 +361,9 @@ def compute_radial_median(fn, extname, x_ra, y_dec, options):
             target=parallel_worker,
             kwargs=dict(
                 jobqueue=jobqueue,
-                data=data, r=r, phi=phi,
+                #data=data,
+                data=modelsub,
+                r=r, phi=phi,
                 dr=dr, dphi=dphi, dpix=dpix,
                 xy_list=xy_work, chunksize=chunksize,
                 dmask=options.dmask,
@@ -385,24 +464,30 @@ def compute_radial_median(fn, extname, x_ra, y_dec, options):
     print use_data.shape
     print (data[use_data]).shape, polar_median.shape
 
-    print "writing smoothring"
-    _data = data.copy()
-    _data[use_data] = polar_median
-    out_fn = fn[:-5]+".radialmedian.fits"
-    pyfits.PrimaryHDU(data=_data).writeto(out_fn, clobber=True)
+    if (options.write_median):
+        print "writing smoothring"
+        _data = data.copy()
+        #_data = modelsub.copy()
+        _data[use_data] = polar_median
+        out_fn = fn[:-5]+".radialmedian.fits"
+        pyfits.PrimaryHDU(data=_data).writeto(out_fn, clobber=True)
 
-    print "writing smoothring_count"
-    _data = data.copy()
-    _data[use_data] = polar_count
-    out_fn = fn[:-5]+".radialcount.fits"
-    pyfits.PrimaryHDU(data=_data).writeto(out_fn, clobber=True)
+    if (options.write_count):
+        print "writing smoothring_count"
+        _data = data.copy()
+        _data[use_data] = polar_count
+        out_fn = fn[:-5]+".radialcount.fits"
+        pyfits.PrimaryHDU(data=_data).writeto(out_fn, clobber=True)
+
+    out_fn = fn[:-5]+".star.profile"
+    numpy.savetxt(out_fn, profile_median)
 
     #
     # Finally, subtract the smoothed model from the input data
     #
     print "writing radialbgsub"
-    data[use_data] -= polar_median
-    out_fn = fn[:-5]+".radialbgsub.fits"
+    data[use_data] -= (polar_median + scale_2d)
+    out_fn = "%s.%s.fits" % (fn[:-5], options.suffix) #, +".radialbgsub.fits"
     hdulist[extname].data = data
     hdulist[0].header['__MAXR'] = max_r
     hdulist[0].header['__DR'] = dr
@@ -434,6 +519,20 @@ if __name__ == "__main__":
                       default=750, type=int)
     parser.add_option("", "--spikewidth", dest="spike_width",
                       default=10, type=int)
+
+    parser.add_option("", "--presub", dest="presub",
+                      action="store_true", default=False)
+
+    parser.add_option("", "--writemedian", dest="write_median",
+                      action="store_true", default=False)
+    parser.add_option("", "--writecount", dest="write_count",
+                      action="store_true", default=False)
+    parser.add_option("", "--writestarmodel", dest="write_starmodel",
+                      action="store_true", default=False)
+
+    parser.add_option("", "--suffix", dest="suffix",
+                      default="radialbgsub", type=str)
+
 
     (options, cmdline_args) = parser.parse_args()
 
