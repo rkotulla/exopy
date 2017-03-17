@@ -162,6 +162,12 @@ def parallel_worker(jobqueue,
 
 def compute_radial_median(fn, extname, x_ra, y_dec, options, input_hdu=None):
 
+    out_fn = "%s.%s.fits" % (fn[:-5], options.suffix) #, +".radialbgsub.fits"
+    if (os.path.isfile(out_fn) and not options.clobber):
+        print "Output file already exist (and no --clobber given), skipping!"
+        return
+
+
     if (input_hdu is None):
         hdulist = pyfits.open(fn)
     else:
@@ -286,7 +292,7 @@ def compute_radial_median(fn, extname, x_ra, y_dec, options, input_hdu=None):
             profile_median.append([math.sqrt(0.5*(_max_r**2+_min_r**2)), median, _min_r, _max_r])
 
         profile_median = numpy.array(profile_median)
-        numpy.savetxt(sys.stdout, profile_median)
+        #numpy.savetxt(sys.stdout, profile_median)
         numpy.savetxt("star.prof", profile_median)
         numpy.savetxt("dummy.profile2", profile_median)
         good_profile = profile_median[numpy.isfinite(profile_median[:,0])]
@@ -309,6 +315,19 @@ def compute_radial_median(fn, extname, x_ra, y_dec, options, input_hdu=None):
             model[in_ring] = scale_2d
             pyfits.PrimaryHDU(data=model).writeto(fn[:-5]+".starmodel.fits", clobber=True)
 
+        if (options.write_presub):
+            if (extname != 'PRIMARY'):
+                _outhdu = pyfits.HDUList([
+                    pyfits.PrimaryHDU(header=hdulist[0].header),
+                    pyfits.ImageHDU(header=hdulist[extname].header,
+                                    data=modelsub),
+                ])
+            else:
+                _outhdu = pyfits.HDUlist([pyfits.PrimaryHDU(
+                    header=hdulist[0].header, data=modelsub
+                )])
+            _outhdu.writeto(fn[:-5] + ".presub.fits",
+                            clobber=True)
     else:
         modelsub = data.copy()
         scale_2d = numpy.zeros(data_work.shape)
@@ -529,6 +548,12 @@ if __name__ == "__main__":
     parser.add_option("", "--presub", dest="presub",
                       action="store_true", default=False)
 
+    parser.add_option("", "--clobber", dest="clobber",
+                      action="store_true", default=False)
+
+    parser.add_option("", "--writepresub", dest="write_presub",
+                      action="store_true", default=False)
+
     parser.add_option("", "--writemedian", dest="write_median",
                       action="store_true", default=False)
     parser.add_option("", "--writecount", dest="write_count",
@@ -570,6 +595,7 @@ if __name__ == "__main__":
             obj = ephem.Equatorial(x_ra, y_dec)
             ra_deg = numpy.degrees(obj.ra)
             dec_deg = numpy.degrees(obj.dec)
+            use_extension = None
             for ext in hdulist:
                 try:
                     wcs = astWCS.WCS(ext.header, mode='pyfits')
@@ -586,6 +612,9 @@ if __name__ == "__main__":
                         break
                 except:
                     pass
+            if (use_extension is None):
+                print "could not find specified coordinates"
+                continue
         else:
             try:
                 selected_hdu.append(hdulist[options.extname])
